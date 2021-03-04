@@ -146,9 +146,8 @@ class YaccProduction:
     def __getattr__(self, name):
         if name in self._namemap:
             return self._namemap[name](self._slice)
-        else:
-            nameset = '{' + ', '.join(self._namemap) + '}'
-            raise AttributeError(f'No symbol {name}. Must be one of {nameset}.')
+        nameset = '{' + ', '.join(self._namemap) + '}'
+        raise AttributeError(f'No symbol {name}. Must be one of {nameset}.')
 
     def __setattr__(self, name, value):
         if name[:1] == '_':
@@ -263,7 +262,6 @@ class Production(object):
 
     def __nonzero__(self):
         raise RuntimeError('Used')
-        return 1
 
     def __getitem__(self, index):
         return self.prod[index]
@@ -322,10 +320,9 @@ class LRItem(object):
 
     def __str__(self):
         if self.prod:
-            s = '%s -> %s' % (self.name, ' '.join(self.prod))
+            return '%s -> %s' % (self.name, ' '.join(self.prod))
         else:
-            s = f'{self.name} -> <empty>'
-        return s
+            return f'{self.name} -> <empty>'
 
     def __repr__(self):
         return f'LRItem({self})'
@@ -630,12 +627,7 @@ class Grammar(object):
     # a list of all symbols.
     # -----------------------------------------------------------------------------
     def unused_terminals(self):
-        unused_tok = []
-        for s, v in self.Terminals.items():
-            if s != 'error' and not v:
-                unused_tok.append(s)
-
-        return unused_tok
+        return [s for s, v in self.Terminals.items() if s != 'error' and not v]
 
     # ------------------------------------------------------------------------------
     # unused_rules()
@@ -662,12 +654,12 @@ class Grammar(object):
     # -----------------------------------------------------------------------------
 
     def unused_precedence(self):
-        unused = []
-        for termname in self.Precedence:
-            if not (termname in self.Terminals or termname in self.UsedPrecedence):
-                unused.append((termname, self.Precedence[termname][0]))
-
-        return unused
+        return [
+            (termname, self.Precedence[termname][0])
+            for termname in self.Precedence
+            if termname not in self.Terminals
+            and termname not in self.UsedPrecedence
+        ]
 
     # -------------------------------------------------------------------------
     # _first()
@@ -842,11 +834,10 @@ class Grammar(object):
     # description along with some diagnostics.
     # ----------------------------------------------------------------------
     def __str__(self):
-        out = []
-        out.append('Grammar:\n')
+        out = ['Grammar:\n']
         for n, p in enumerate(self.Productions):
             out.append(f'Rule {n:<5d} {p}')
-        
+
         unused_terminals = self.unused_terminals()
         if unused_terminals:
             out.append('\nUnused terminals:\n')
@@ -889,9 +880,7 @@ class Grammar(object):
 # ------------------------------------------------------------------------------
 
 def digraph(X, R, FP):
-    N = {}
-    for x in X:
-        N[x] = 0
+    N = {x: 0 for x in X}
     stack = []
     F = {}
     for x in X:
@@ -1126,9 +1115,8 @@ class LRTable(object):
             for p in state:
                 if p.lr_index < p.len - 1:
                     t = (stateno, p.prod[p.lr_index+1])
-                    if t[1] in self.grammar.Nonterminals:
-                        if t not in trans:
-                            trans.append(t)
+                    if t[1] in self.grammar.Nonterminals and t not in trans:
+                        trans.append(t)
         return trans
 
     # -----------------------------------------------------------------------------
@@ -1149,9 +1137,8 @@ class LRTable(object):
         for p in g:
             if p.lr_index < p.len - 1:
                 a = p.prod[p.lr_index+1]
-                if a in self.grammar.Terminals:
-                    if a not in terms:
-                        terms.append(a)
+                if a in self.grammar.Terminals and a not in terms:
+                    terms.append(a)
 
         # This extra bit is to handle the start state
         if state == 0 and N == self.grammar.Productions[0].prod[0]:
@@ -1213,10 +1200,7 @@ class LRTable(object):
         includedict = {}       # Dictionary of include relations
 
         # Make a dictionary of non-terminal transitions
-        dtrans = {}
-        for t in trans:
-            dtrans[t] = 1
-
+        dtrans = {t: 1 for t in trans}
         # Loop over all transitions and compute lookbacks and includes
         for state, N in trans:
             lookb = []
@@ -1265,7 +1249,7 @@ class LRTable(object):
                     while i < r.lr_index:
                         if r.prod[i] != p.prod[i+1]:
                             break
-                        i = i + 1
+                        i += 1
                     else:
                         lookb.append((j, r))
             for i in includes:
@@ -1291,8 +1275,7 @@ class LRTable(object):
     def compute_read_sets(self, C, ntrans, nullable):
         FP = lambda x: self.dr_relation(C, x, nullable)
         R =  lambda x: self.reads_relation(C, x, nullable)
-        F = digraph(ntrans, R, FP)
-        return F
+        return digraph(ntrans, R, FP)
 
     # -----------------------------------------------------------------------------
     # compute_follow_sets()
@@ -1313,8 +1296,7 @@ class LRTable(object):
     def compute_follow_sets(self, ntrans, readsets, inclsets):
         FP = lambda x: readsets[x]
         R  = lambda x: inclsets.get(x, [])
-        F = digraph(ntrans, R, FP)
-        return F
+        return digraph(ntrans, R, FP)
 
     # -----------------------------------------------------------------------------
     # add_lookaheads()
@@ -1398,118 +1380,113 @@ class LRTable(object):
                 descrip.append(f'    ({p.number}) {p}')
 
             for p in I:
-                    if p.len == p.lr_index + 1:
-                        if p.name == "S'":
-                            # Start symbol. Accept!
-                            st_action['$end'] = 0
-                            st_actionp['$end'] = p
-                        else:
-                            # We are at the end of a production.  Reduce!
-                            laheads = p.lookaheads[st]
-                            for a in laheads:
-                                actlist.append((a, p, f'reduce using rule {p.number} ({p})'))
-                                r = st_action.get(a)
-                                if r is not None:
-                                    # Have a shift/reduce or reduce/reduce conflict
-                                    if r > 0:
-                                        # Need to decide on shift or reduce here
-                                        # By default we favor shifting. Need to add
-                                        # some precedence rules here.
-
-                                        # Shift precedence comes from the token
-                                        sprec, slevel = Precedence.get(a, ('right', 0))
-
-                                        # Reduce precedence comes from rule being reduced (p)
-                                        rprec, rlevel = Productions[p.number].prec
-
-                                        if (slevel < rlevel) or ((slevel == rlevel) and (rprec == 'left')):
-                                            # We really need to reduce here.
-                                            st_action[a] = -p.number
-                                            st_actionp[a] = p
-                                            if not slevel and not rlevel:
-                                                descrip.append(f'  ! shift/reduce conflict for {a} resolved as reduce')
-                                                self.sr_conflicts.append((st, a, 'reduce'))
-                                            Productions[p.number].reduced += 1
-                                        elif (slevel == rlevel) and (rprec == 'nonassoc'):
-                                            st_action[a] = None
-                                        else:
-                                            # Hmmm. Guess we'll keep the shift
-                                            if not rlevel:
-                                                descrip.append(f'  ! shift/reduce conflict for {a} resolved as shift')
-                                                self.sr_conflicts.append((st, a, 'shift'))
-                                    elif r <= 0:
-                                        # Reduce/reduce conflict.   In this case, we favor the rule
-                                        # that was defined first in the grammar file
-                                        oldp = Productions[-r]
-                                        pp = Productions[p.number]
-                                        if oldp.line > pp.line:
-                                            st_action[a] = -p.number
-                                            st_actionp[a] = p
-                                            chosenp, rejectp = pp, oldp
-                                            Productions[p.number].reduced += 1
-                                            Productions[oldp.number].reduced -= 1
-                                        else:
-                                            chosenp, rejectp = oldp, pp
-                                        self.rr_conflicts.append((st, chosenp, rejectp))
-                                        descrip.append('  ! reduce/reduce conflict for %s resolved using rule %d (%s)' % 
-                                                       (a, st_actionp[a].number, st_actionp[a]))
-                                    else:
-                                        raise LALRError(f'Unknown conflict in state {st}')
-                                else:
-                                    st_action[a] = -p.number
-                                    st_actionp[a] = p
-                                    Productions[p.number].reduced += 1
+                if p.len == p.lr_index + 1:
+                    if p.name == "S'":
+                        # Start symbol. Accept!
+                        st_action['$end'] = 0
+                        st_actionp['$end'] = p
                     else:
-                        i = p.lr_index
-                        a = p.prod[i+1]       # Get symbol right after the "."
-                        if a in self.grammar.Terminals:
-                            g = self.lr0_goto(I, a)
-                            j = self.lr0_cidhash.get(id(g), -1)
-                            if j >= 0:
-                                # We are in a shift state
-                                actlist.append((a, p, f'shift and go to state {j}'))
-                                r = st_action.get(a)
-                                if r is not None:
-                                    # Whoa have a shift/reduce or shift/shift conflict
-                                    if r > 0:
-                                        if r != j:
-                                            raise LALRError(f'Shift/shift conflict in state {st}')
-                                    elif r <= 0:
-                                        # Do a precedence check.
-                                        #   -  if precedence of reduce rule is higher, we reduce.
-                                        #   -  if precedence of reduce is same and left assoc, we reduce.
-                                        #   -  otherwise we shift
-                                        rprec, rlevel = Productions[st_actionp[a].number].prec
-                                        sprec, slevel = Precedence.get(a, ('right', 0))
-                                        if (slevel > rlevel) or ((slevel == rlevel) and (rprec == 'right')):
-                                            # We decide to shift here... highest precedence to shift
-                                            Productions[st_actionp[a].number].reduced -= 1
-                                            st_action[a] = j
-                                            st_actionp[a] = p
-                                            if not rlevel:
-                                                descrip.append(f'  ! shift/reduce conflict for {a} resolved as shift')
-                                                self.sr_conflicts.append((st, a, 'shift'))
-                                        elif (slevel == rlevel) and (rprec == 'nonassoc'):
-                                            st_action[a] = None
-                                        else:
-                                            # Hmmm. Guess we'll keep the reduce
-                                            if not slevel and not rlevel:
-                                                descrip.append(f'  ! shift/reduce conflict for {a} resolved as reduce')
-                                                self.sr_conflicts.append((st, a, 'reduce'))
+                        # We are at the end of a production.  Reduce!
+                        laheads = p.lookaheads[st]
+                        for a in laheads:
+                            actlist.append((a, p, f'reduce using rule {p.number} ({p})'))
+                            r = st_action.get(a)
+                            if r is not None:
+                                    # Have a shift/reduce or reduce/reduce conflict
+                                if r > 0:
+                                    # Need to decide on shift or reduce here
+                                    # By default we favor shifting. Need to add
+                                    # some precedence rules here.
 
+                                    # Shift precedence comes from the token
+                                    sprec, slevel = Precedence.get(a, ('right', 0))
+
+                                    # Reduce precedence comes from rule being reduced (p)
+                                    rprec, rlevel = Productions[p.number].prec
+
+                                    if (slevel < rlevel) or ((slevel == rlevel) and (rprec == 'left')):
+                                        # We really need to reduce here.
+                                        st_action[a] = -p.number
+                                        st_actionp[a] = p
+                                        if not slevel and not rlevel:
+                                            descrip.append(f'  ! shift/reduce conflict for {a} resolved as reduce')
+                                            self.sr_conflicts.append((st, a, 'reduce'))
+                                        Productions[p.number].reduced += 1
+                                    elif (slevel == rlevel) and (rprec == 'nonassoc'):
+                                        st_action[a] = None
                                     else:
-                                        raise LALRError(f'Unknown conflict in state {st}')
+                                        # Hmmm. Guess we'll keep the shift
+                                        if not rlevel:
+                                            descrip.append(f'  ! shift/reduce conflict for {a} resolved as shift')
+                                            self.sr_conflicts.append((st, a, 'shift'))
                                 else:
-                                    st_action[a] = j
-                                    st_actionp[a] = p
+                                    # Reduce/reduce conflict.   In this case, we favor the rule
+                                    # that was defined first in the grammar file
+                                    oldp = Productions[-r]
+                                    pp = Productions[p.number]
+                                    if oldp.line > pp.line:
+                                        st_action[a] = -p.number
+                                        st_actionp[a] = p
+                                        chosenp, rejectp = pp, oldp
+                                        Productions[p.number].reduced += 1
+                                        Productions[oldp.number].reduced -= 1
+                                    else:
+                                        chosenp, rejectp = oldp, pp
+                                    self.rr_conflicts.append((st, chosenp, rejectp))
+                                    descrip.append('  ! reduce/reduce conflict for %s resolved using rule %d (%s)' % 
+                                                   (a, st_actionp[a].number, st_actionp[a]))
+                            else:
+                                st_action[a] = -p.number
+                                st_actionp[a] = p
+                                Productions[p.number].reduced += 1
+                else:
+                    i = p.lr_index
+                    a = p.prod[i+1]       # Get symbol right after the "."
+                    if a in self.grammar.Terminals:
+                        g = self.lr0_goto(I, a)
+                        j = self.lr0_cidhash.get(id(g), -1)
+                        if j >= 0:
+                            # We are in a shift state
+                            actlist.append((a, p, f'shift and go to state {j}'))
+                            r = st_action.get(a)
+                            if r is not None:
+                                    # Whoa have a shift/reduce or shift/shift conflict
+                                if r > 0:
+                                    if r != j:
+                                        raise LALRError(f'Shift/shift conflict in state {st}')
+                                else:
+                                    # Do a precedence check.
+                                    #   -  if precedence of reduce rule is higher, we reduce.
+                                    #   -  if precedence of reduce is same and left assoc, we reduce.
+                                    #   -  otherwise we shift
+                                    rprec, rlevel = Productions[st_actionp[a].number].prec
+                                    sprec, slevel = Precedence.get(a, ('right', 0))
+                                    if (slevel > rlevel) or ((slevel == rlevel) and (rprec == 'right')):
+                                        # We decide to shift here... highest precedence to shift
+                                        Productions[st_actionp[a].number].reduced -= 1
+                                        st_action[a] = j
+                                        st_actionp[a] = p
+                                        if not rlevel:
+                                            descrip.append(f'  ! shift/reduce conflict for {a} resolved as shift')
+                                            self.sr_conflicts.append((st, a, 'shift'))
+                                    elif (slevel == rlevel) and (rprec == 'nonassoc'):
+                                        st_action[a] = None
+                                    else:
+                                        # Hmmm. Guess we'll keep the reduce
+                                        if not slevel and not rlevel:
+                                            descrip.append(f'  ! shift/reduce conflict for {a} resolved as reduce')
+                                            self.sr_conflicts.append((st, a, 'reduce'))
+
+                            else:
+                                st_action[a] = j
+                                st_actionp[a] = p
 
             # Print the actions associated with each terminal
             _actprint = {}
             for a, p, m in actlist:
-                if a in st_action:
-                    if p is st_actionp[a]:
-                        descrip.append(f'    {a:<15s} {m}')
-                        _actprint[(a, m)] = 1
+                if a in st_action and p is st_actionp[a]:
+                    descrip.append(f'    {a:<15s} {m}')
+                    _actprint[(a, m)] = 1
             descrip.append('')
 
             # Construct the goto table for this state
@@ -1535,10 +1512,7 @@ class LRTable(object):
     # of all of the states, conflicts, and other details.
     # ----------------------------------------------------------------------
     def __str__(self):
-        out = []
-        for descrip in self.state_descriptions.values():
-            out.append(descrip)
-            
+        out = [descrip for descrip in self.state_descriptions.values()]
         if self.sr_conflicts or self.rr_conflicts:
             out.append('\nConflicts:\n')
 
@@ -1587,12 +1561,12 @@ def _collect_grammar_rules(func):
                         ebnf_prod.extend(prod)
                         break
 
-            if syms[1:2] == [':'] or syms[1:2] == ['::=']:
+            if syms[1:2] in [[':'], ['::=']]:
                 grammar.append((func, filename, lineno, syms[0], syms[2:]))
             else:
                 grammar.append((func, filename, lineno, prodname, syms))
             grammar.extend(ebnf_prod)
-            
+
         func = getattr(func, 'next_func', None)
 
     return grammar
@@ -1625,13 +1599,11 @@ def _replace_ebnf_optional(syms):
 def _replace_ebnf_choice(syms):
     syms = list(syms)
     newprods = [ ]
-    n = 0
-    while n < len(syms):
+    for n in range(len(syms)):
         if '|' in syms[n]:
             symname, prods = _generate_choice_rules(syms[n].split('|'))
             syms[n] = symname
             newprods.extend(prods)
-        n += 1
     return syms, newprods
     
 # Generate grammar rules for repeated items
@@ -1881,9 +1853,7 @@ class Parser(metaclass=ParserMeta):
         '''
         if not cls.__validate_tokens():
             return False
-        if not cls.__validate_precedence():
-            return False
-        return True
+        return bool(cls.__validate_precedence())
 
     @classmethod
     def __build_grammar(cls, rules):
@@ -1990,9 +1960,8 @@ class Parser(metaclass=ParserMeta):
         '''
         Collect all of the tagged grammar rules
         '''
-        rules = [ (name, value) for name, value in definitions
+        return [ (name, value) for name, value in definitions
                   if callable(value) and hasattr(value, 'rules') ]
-        return rules
 
     # ----------------------------------------------------------------------
     # Build the LALR(1) tables. definitions is a list of (name, item) tuples

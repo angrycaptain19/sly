@@ -344,17 +344,11 @@ class LocalBuilder(SubBuilder):
 
 class GlobalBuilder(SubBuilder):
     def get(self, glob):
-        if isinstance(glob, int):
-            globidx = glob
-        else:
-            globidx = glob.idx
+        globidx = glob if isinstance(glob, int) else glob.idx
         self._append([global_.get, *encode_unsigned(globidx)])
 
     def set(self, glob):
-        if isinstance(glob, int):
-            globidx = glob
-        else:
-            globidx = glob.idx
+        globidx = glob if isinstance(glob, int) else glob.idx
         self._append([global_.set, *encode_unsigned(globidx)])
 
 class MemoryBuilder(SubBuilder):
@@ -511,10 +505,7 @@ class InstructionBuilder:
             self._code.append([0x10, *encode_unsigned(func)])
 
     def call_indirect(self, typesig):
-        if isinstance(typesig, Type):
-            typeidx = typesig.idx
-        else:
-            typeidx = typesig
+        typeidx = typesig.idx if isinstance(typesig, Type) else typesig
         self._code.append([0x11, *encode_unsigned(typeidx), 0x00])
 
     def drop(self):
@@ -632,9 +623,8 @@ class Module:
         enc = encode_function_type(parms, results)
         if enc in self.type_section:
             return Type(parms, results, self.type_section.index(enc))
-        else:
-            self.type_section.append(enc)
-            return Type(parms, results, len(self.type_section) - 1)
+        self.type_section.append(enc)
+        return Type(parms, results, len(self.type_section) - 1)
 
     def import_function(self, module, name, parms, results):
         if len(self.function_section) > 0:
@@ -747,8 +737,7 @@ class Module:
         if not contents:
             return b''
         contents_code = encode_vector(contents)
-        code = bytes([sectionid]) + encode_unsigned(len(contents_code)) + contents_code
-        return code
+        return bytes([sectionid]) + encode_unsigned(len(contents_code)) + contents_code
 
     def encode(self):
         for func in self.functions:
